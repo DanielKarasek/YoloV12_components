@@ -3,9 +3,9 @@ from typing import Dict, List, Sequence, Tuple
 import torch
 from torch import nn
 
-from YoloV12.bbox_utilities.bbox_conversion import distribution2offsets, offset2xyxy, xywh2xyxy
+from YoloV12.bbox_utilities.bbox_conversion import cxcywh2xyxy, distribution2offsets, offset2xyxy, xywh2xyxy
 from YoloV12.losses.bbox_loss import BboxLoss
-from YoloV12.tal import TaskAlignedAssignerLayer
+from YoloV12.assigners.tal import TaskAlignedAssignerLayer
 from YoloV12.yolo_utils import create_anchor_points_and_stride_tensors
 
 
@@ -69,7 +69,7 @@ class DetectionLoss(nn.Module):
         returns:
             bboxes: (b, max_bboxes, 4) # XYXY
         """
-        return xywh2xyxy(bboxes).mul_(img_size.repeat(2).view(1,1,4))
+        return cxcywh2xyxy(bboxes).mul_(img_size.repeat(2).view(1,1,4))
 
     @staticmethod
     def extract_positive(pred_distribution: torch.Tensor, pred_bboxes: torch.Tensor, target_bboxes: torch.Tensor,
@@ -101,10 +101,10 @@ class DetectionLoss(nn.Module):
     def get_grid_sizes_and_image_size(self, predictions: List[torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         params:
-            predictions: layer_cnt*[(b, W_l, H_l, 4*bin_count + cls_cnt)]
+            predictions: layer_cnt*[(b, H_l, W_l, 4*bin_count + cls_cnt)]
         returns:
-            grid_sizes: (layer_cnt, 2)
-            img_size: (b, 2)
+            grid_sizes: (layer_cnt, 2) # yx
+            img_size: (b, 2) # yx
         """
         grid_sizes = torch.cat([torch.tensor(layer.shape[1:3]) for layer in predictions], dim=0).view(-1, 2)
         img_size = (grid_sizes * self._strides.repeat_interleave(2).view(-1, 2))[0]
@@ -152,7 +152,7 @@ class DetectionLoss(nn.Module):
     def forward(self, predictions: List[torch.Tensor], targets: Dict[str, torch.Tensor]) -> torch.Tensor:
         """
         params:
-            predictions: layer_cnt*[(b, W_l, H_l, 4*bin_count + cls_cnt)]
+            predictions: layer_cnt*[(b, H_l, W_l, 4*bin_count + cls_cnt)]
             targets: Dict{img_idx: (n), gt_bboxes: (n, 4),  gt_labels: (n)}
         returns:
             loss: (1) scaled sum of cls_loss, box_loss, dfl_loss
@@ -193,7 +193,7 @@ class DetectionLoss(nn.Module):
             pred_dist, pred_bboxes_g, target_bboxes_g, anchor_points_g, target_scores_onehot = positive_examples
             cIoU_loss, dfl_loss = self._bbox_loss(pred_dist.view(-1, 4*self._bin_cnt),
                                                  pred_bboxes_g.view(-1, 4),
-                                                 target_bboxes.view(-1, 4),
+                                                 target_bboxes_g.view(-1, 4),
                                                  anchor_points_g,
                                                  target_scores_onehot)
 

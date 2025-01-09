@@ -2,61 +2,65 @@ from typing import Literal
 
 import torch
 
-BoxFormat = Literal ["cxcywh", "xywh", "xyxy"]
+BoxFormat = Literal ["cxcywh", "xywh", "xyxy", "offset"]
 
 
 class InvalidBoxFormat(Exception):
     pass
 
 
-def xyxy2xyxy(bboxes: torch.Tensor, in_place: bool = False) -> torch.Tensor:
-    if in_place:
-        raise NotImplementedError("In place conversion not implemented")
-    boxes_xyxy = bboxes[..., 0:4].clone()
-    return boxes_xyxy
+def xyxy2xyxy(bboxes: torch.Tensor) -> torch.Tensor:
+    return bboxes
 
 
-def xywh2xyxy(bboxes: torch.Tensor, in_place: bool = False) -> torch.Tensor:
-    if in_place:
-        raise NotImplementedError("In place conversion not implemented")
-    bboxes_shape = bboxes.shape
-    box1_x1 = bboxes[..., 0:1]
-    box1_y1 = bboxes[..., 1:2]
-    box1_x2 = bboxes[..., 0:1] + bboxes[..., 2:3]
-    box1_y2 = bboxes[..., 1:2] + bboxes[..., 3:4]
-    return torch.stack([box1_x1, box1_y1, box1_x2, box1_y2], dim=-1).view(*bboxes_shape[:-1], 4)
+def xyxy2xywh(bboxes: torch.Tensor) -> torch.Tensor:
+    bboxes_new = torch.empty_like(bboxes)
+    bboxes_new[..., :] = bboxes
+    bboxes_new[..., 2:] -= bboxes[..., :2]
+    return bboxes_new
 
-def xyxy2xywh(bboxes: torch.Tensor, in_place: bool = False) -> torch.Tensor:
-    if in_place:
-        raise NotImplementedError("In place conversion not implemented")
-    bboxes_shape = bboxes.shape
-    box1_w = bboxes[..., 2:3] - bboxes[..., 0:1]
-    box1_h = bboxes[..., 3:4] - bboxes[..., 1:2]
-    box1_x = bboxes[..., 0:1]
-    box1_y = bboxes[..., 1:2]
-    return torch.stack([box1_x, box1_y, box1_w, box1_h], dim=-1).view(*bboxes_shape[:-1], 4)
+def xyxy2cxcywh(bboxes: torch.Tensor) -> torch.Tensor:
+    bboxes_new = torch.empty_like(bboxes)
+    bboxes_new[..., 0:2] = (bboxes[..., 0:2] + bboxes[..., 2:4]) / 2
+    bboxes_new[..., 2:4] = bboxes[..., 2:4] - bboxes[..., 0:2]
+    return bboxes_new
 
-def cxcywh2xyxy(bboxes: torch.Tensor, in_place: bool = False) -> torch.Tensor:
-    if in_place:
-        raise NotImplementedError("In place conversion not implemented")
-    bboxes_shape = bboxes.shape
-    box1_x1 = bboxes[..., 0:1] - bboxes[..., 2:3] / 2
-    box1_y1 = bboxes[..., 1:2] - bboxes[..., 3:4] / 2
-    box1_x2 = bboxes[..., 0:1] + bboxes[..., 2:3] / 2
-    box1_y2 = bboxes[..., 1:2] + bboxes[..., 3:4] / 2
-    return torch.stack([box1_x1, box1_y1, box1_x2, box1_y2], dim=-1).view(*bboxes_shape[:-1], 4)
+def xyxy2offset(xyxy_bbox: torch.Tensor, anchor_points: torch.Tensor) -> torch.Tensor:
+    """
+    Anchor points (n, 2) are used as anchors from which the ltrb offsets should be calculated
+    """
+    bbox_offsets = torch.empty_like(xyxy_bbox)
+    bbox_offsets[..., :2] = anchor_points - xyxy_bbox[..., :2]
+    bbox_offsets[..., 2:] = xyxy_bbox[..., 2:] - anchor_points
+    return bbox_offsets
 
 
-def xyxy2cxcywh(bboxes: torch.Tensor, in_place: bool = False) -> torch.Tensor:
-    if in_place:
-        raise NotImplementedError("In place conversion not implemented")
-    bboxes_shape = bboxes.shape
-    box1_w = bboxes[..., 2:3] - bboxes[..., 0:1]
-    box1_h = bboxes[..., 3:4] - bboxes[..., 1:2]
-    box1_x = (bboxes[..., 0:1] + bboxes[..., 2:3]) / 2
-    box1_y = (bboxes[..., 1:2] + bboxes[..., 3:4]) / 2
+def xywh2xyxy(bboxes: torch.Tensor) -> torch.Tensor:
+    bboxes_new = torch.empty_like(bboxes)
+    bboxes_new[..., 0:2] = bboxes[..., 0:2]
+    bboxes_new[..., 2:4] = bboxes[..., 0:2] + bboxes[..., 2:4]
+    return bboxes_new
 
-    return torch.stack([box1_x, box1_y, box1_w, box1_h], dim=-1).view(*bboxes_shape[:-1], 4)
+def xywh2cxcywh(bboxes: torch.Tensor) -> torch.Tensor:
+    bboxes_new = torch.empty_like(bboxes)
+    bboxes_new[..., 0:2] = bboxes[..., 0:2] - bboxes[..., 2:4] / 2
+    bboxes_new[..., 2:4] = bboxes[..., 2:4]
+    return bboxes_new
+
+def xywh2offset(xywh_bbox: torch.Tensor, anchor_points: torch.Tensor) -> torch.Tensor:
+    """
+    Anchor points (n, 2) are used as anchors from which the ltrb offsets should be calculated
+    """
+    xyxy = xywh2xyxy(xywh_bbox)
+    bbox_offsets = xyxy2offset(xyxy, anchor_points)
+    return bbox_offsets
+
+
+def cxcywh2xyxy(bboxes: torch.Tensor) -> torch.Tensor:
+    new_bboxes = torch.empty_like(bboxes)
+    new_bboxes[..., 0:2] = bboxes[..., 0:2] - bboxes[..., 2:4] / 2
+    new_bboxes[..., 2:4] = bboxes[..., 0:2] + bboxes[..., 2:4] / 2
+    return new_bboxes
 
 
 def offset2xyxy(bbox_offsets: torch.Tensor, anchor_points: torch.Tensor) -> torch.Tensor:
@@ -73,21 +77,6 @@ def offset2xyxy(bbox_offsets: torch.Tensor, anchor_points: torch.Tensor) -> torc
     xyxy_bbox[..., :2] = anchor_points - min_offset
     xyxy_bbox[..., 2:] = anchor_points + max_offset
     return xyxy_bbox
-
-
-def xyxy2offsets(xyxy_bbox: torch.Tensor, anchor_points: torch.Tensor) -> torch.Tensor:
-    """
-    Convert the bbox to offsets
-    params:
-        xyxy_bbox: (..., N, 4)
-        anchor_points: (N, 2)
-    returns:
-        bbox_offsets: (..., N, 4)
-    """
-    bbox_offsets = torch.empty_like(xyxy_bbox)
-    bbox_offsets[..., :2] = anchor_points - xyxy_bbox[..., :2]
-    bbox_offsets[..., 2:] = xyxy_bbox[..., 2:] - anchor_points
-    return bbox_offsets
 
 
 def offsets2distribution(offsets: torch.Tensor, bin_weights: torch.Tensor) -> torch.Tensor:
@@ -140,3 +129,5 @@ def boxes_to_corners(bboxes: torch.Tensor,
         bboxes = xywh2xyxy(bboxes)
 
     return bboxes
+
+    import doctest

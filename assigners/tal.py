@@ -3,7 +3,7 @@ from typing import Tuple
 from torch import nn
 
 import torch
-from YoloV12.bbox_utilities.bbox_conversion import (offset2xyxy, xyxy2offsets)
+from YoloV12.bbox_utilities.bbox_conversion import (offset2xyxy, xyxy2offset)
 from YoloV12.bbox_utilities.bbox_iou import bbox_ciou_1to1
 from YoloV12.losses.bbox_loss import BboxLoss
 from YoloV12.losses.cIoU_loss import IoULoss
@@ -302,6 +302,7 @@ def setup_data_tal():
     return points, bboxes_gt, gt_labels, bboxes_pred, pred_scores, gt_mask
 
 
+
 def main():
     # Todo: add test_tal which asserts the values
     points, bboxes_gt, gt_labels, bboxes_pred, pred_scores, gt_mask = setup_data_tal()
@@ -311,47 +312,6 @@ def main():
     print(target_scores, target_bboxes, assignment_mask, overlaps, fg_mask)
 
 
-def test_bbox_conversions():
-    anchor_points = torch.tensor([[3,3], [7,7], [9,9]])
-    xyxy_bboxes = torch.tensor([[2,2,4,4], [3,3,8,8], [1,1,13,10]])
-    offsets = xyxy2offsets(xyxy_bboxes, anchor_points)
-    xyxy_bboxes_2 = offset2xyxy(offsets, anchor_points)
-    assert torch.allclose(xyxy_bboxes, xyxy_bboxes_2)
-
-def setup_bbox_loss_test_data():
-    pred_bboxes = torch.tensor([[0, 0, 1, 1], [1, 1, 2, 2], [2, 2, 3, 3]])
-    pred_distribution = torch.tensor([[0.1, 0.9, 0.8, 0.6, 0.5, 0.9, 0.2, 0.8, 0.1, 0.9, 0.2, 0.8],
-                                      [0.5, 0.5, 0.9, 0.6, 0.4, 0.1, 0.6, 0.5, 0.2, 0.9, 0.2, 0.8],
-                                      [0.9, 0.1, 0.8, 0.9, 0.2, 0.1, 0.9, 0.2, 0.5, 0.6, 0.4, 0.8]])
-
-    target_bboxes = torch.tensor([[-0.1, -0.2, 0.6, 0.7], [0.9, 1.2, 1.5, 3.5], [4.3, 4.7, 5.2, 5.3]])
-    anchor_points = torch.tensor([[0, 0], [1, 2], [2, 2]])
-    weights = torch.tensor([1, 0.5, 0.3])
-    return pred_distribution, pred_bboxes, target_bboxes, anchor_points, weights
-
-def test_dfl():
-    dfl = DistributionFocalLoss("sum")
-
-    pred_distribution, pred_bboxes, target_bboxes, anchor_points, weights = setup_bbox_loss_test_data()
-
-    dist_bins = pred_distribution.shape[-1] // 4
-    ltrb_target_bboxes = xyxy2offsets(target_bboxes, anchor_points).clamp_(0, dist_bins - 1 - 1e-6)
-
-    loss = dfl(pred_distribution.view(-1, dist_bins), ltrb_target_bboxes.view(-1), weights)
-    assert torch.isclose(loss, torch.tensor(8.4642))
-
-def test_iou():
-    # USES cIoU loss
-    iou = IoULoss("sum")
-    _, pred_bboxes, target_bboxes, _, weights = setup_bbox_loss_test_data()
-    loss = iou(pred_bboxes, target_bboxes, weights)
-    assert torch.isclose(loss, torch.tensor(1.6213734))
-
-def test_bbox_loss():
-    bbox_loss = BboxLoss("sum")
-    pred_distribution, pred_bboxes, target_bboxes, anchor_points, target_score_weights = setup_bbox_loss_test_data()
-    IoU_loss, dfl_loss  = bbox_loss(pred_distribution, pred_bboxes, target_bboxes, anchor_points, target_score_weights)
-    assert torch.isclose(IoU_loss, torch.tensor(1.6213734)) and torch.isclose(dfl_loss, torch.tensor(8.4642))
 
 
 
