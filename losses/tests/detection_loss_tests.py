@@ -411,14 +411,15 @@ def v8_detection_loss(detection_config):
 def test_forward_integration(predictions, targets, detection_loss_obj, v8_detection_loss, medium_random_seed_32_detection_loss):
     gt_total, gt_cls, gt_cIoU, gt_dfl = medium_random_seed_32_detection_loss
 
+    # todo: just for debugging purposes, will delete later
     targets_v8 = deepcopy(targets)
     predictions_v8 = deepcopy(predictions)
     targets_v8["bboxes"] = targets_v8["gt_bboxes"]
     targets_v8["cls"] = targets_v8["gt_labels"]
     targets_v8["batch_idx"] = targets_v8["img_idx"]
+    v8_loss = v8_detection_loss(predictions_v8, targets_v8)
 
     loss = detection_loss_obj(predictions, targets)
-    v8_loss = v8_detection_loss(predictions_v8, targets_v8)
     assert loss[0].allclose(gt_total)
     assert loss[1].allclose(gt_cls)
     assert loss[2].allclose(gt_cIoU)

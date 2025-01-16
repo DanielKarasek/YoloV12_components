@@ -128,12 +128,15 @@ class DetectionLoss(nn.Module):
         gt_bboxes = self.set_bboxes2xyxy_img_coordinates(gt_bboxes, img_size)
         return gt_bboxes, gt_cls, gt_mask
 
-    def preprocess_predictions(self, pred_dist_raw: torch.Tensor, pred_scores_raw: torch.Tensor,
+    def preprocess_predictions(self,
+                               pred_dist_raw: torch.Tensor, pred_scores_raw: torch.Tensor,
                                anchor_points: torch.Tensor, bs: int) -> (
             Tuple[torch.Tensor, torch.Tensor, torch.Tensor]):
         """
         params:
-            predictions: layer_cnt*[(b, W_l, H_l, 4*bin_count + cls_cnt)]
+            pred_dist_raw: layer_cnt*[(b, K, 4*bin_count)]
+            pred_scores_raw: layer_cnt*[(b, K, cls_cnt)]
+            anchor_points: (K, 2)
         returns:
             pred_dist: (b, K, 4*bin_cnt)
             pred_bboxes: (b, K, 4) # XYXY in grid_coordinates
