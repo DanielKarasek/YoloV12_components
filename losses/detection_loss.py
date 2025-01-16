@@ -9,6 +9,7 @@ from YoloV12.assigners.tal import TaskAlignedAssignerLayer
 from YoloV12.yolo_utils import create_anchor_points_and_stride_tensors
 
 
+
 class DetectionLoss(nn.Module):
 
     def __init__(self,
@@ -27,7 +28,7 @@ class DetectionLoss(nn.Module):
 
         self._strides = torch.tensor(strides)
         self._tal = TaskAlignedAssignerLayer(cls_cnt=cls_cnt)
-        self._classification_loss = torch.nn.BCEWithLogitsLoss(reduction="sum")
+        self._classification_loss = torch.nn.BCEWithLogitsLoss(reduction="none")
         self._bbox_loss = BboxLoss(reduction="sum")
 
         self._bbox_scale = bbox_scale
@@ -149,13 +150,16 @@ class DetectionLoss(nn.Module):
     #  (values don't have to be necessarly the same)
     # todo: Check Ultralytics if the scaling is same except for scale up
     # todo: Add scaling factor - if TAL doesn't find enough quality bboxes, the error isn't too small
-    def forward(self, predictions: List[torch.Tensor], targets: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def forward(self, predictions: List[torch.Tensor], targets: Dict[str, torch.Tensor])-> (
+            Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]):
         """
         params:
             predictions: layer_cnt*[(b, H_l, W_l, 4*bin_count + cls_cnt)]
             targets: Dict{img_idx: (n), gt_bboxes: (n, 4),  gt_labels: (n)}
         returns:
-            loss: (1) scaled sum of cls_loss, box_loss, dfl_loss
+            loss: (1) batch scaled sum of cls_loss, box_loss, dfl_loss
+                      losses are normalized so the magnitude coming from each individual image i
+                      s approximately the smae
         """
         cIoU_loss, cls_loss, dfl_loss = torch.zeros(1), torch.zeros(1), torch.zeros(1)
         bs = len(predictions[0])
@@ -181,25 +185,40 @@ class DetectionLoss(nn.Module):
                                                                        pred_bboxes_img,
                                                                        pred_scores,
                                                                        gt_mask)
+        # This keeps loss magnitude same across images (images with more detections don't take over)
+        img_idx_weights = torch.max(target_scores_onehot.view(bs, -1).sum(-1), torch.ones(bs,
+                                                                                         dtype=target_scores_onehot.dtype,
+                                                                                         device=target_scores_onehot.device))
 
-        cls_loss = self._classification_loss(pred_scores_raw.view(-1, self._cls_cnt),
-                                             target_scores_onehot.view(-1, self._cls_cnt))
+        cls_loss_unscaled = self._classification_loss(pred_scores_raw,
+                                                      target_scores_onehot).view(bs, -1).sum(-1)
+        # TODO: test if this isn't just contraproductive since this loss isn't based upon number of detections
+        #       but rather just the grid size
+        # cls_loss = (cls_loss_unscaled / img_idx_weights).sum()
+        cls_loss = cls_loss_unscaled.sum()
         # get bbox_losses
         if fg_mask.sum():
             target_bboxes /= strides_mask.unsqueeze(-1)
             # extract positives
             positive_examples = self.extract_positive(pred_dist, pred_bboxes_g, target_bboxes,
                                                       target_scores_onehot, anchor_points_g, fg_mask)
-            pred_dist, pred_bboxes_g, target_bboxes_g, anchor_points_g, target_scores_onehot = positive_examples
+            pred_dist, pred_bboxes_g, target_bboxes_g, anchor_points_g, target_scores_weights = positive_examples
+            def create_img_weight_tensor(fg_mask: torch.Tensor, img_idx_weights: torch.Tensor) -> torch.Tensor:
+                positive_per_image = fg_mask.sum(-1)
+                weight_tensor = torch.repeat_interleave(img_idx_weights, positive_per_image)
+                return weight_tensor
+
+            weight_tensor = create_img_weight_tensor(fg_mask, img_idx_weights)
+            target_scores_weights /= weight_tensor
             cIoU_loss, dfl_loss = self._bbox_loss(pred_dist.view(-1, 4*self._bin_cnt),
-                                                 pred_bboxes_g.view(-1, 4),
-                                                 target_bboxes_g.view(-1, 4),
-                                                 anchor_points_g,
-                                                 target_scores_onehot)
+                                                  pred_bboxes_g.view(-1, 4),
+                                                  target_bboxes_g.view(-1, 4),
+                                                  anchor_points_g,
+                                                  target_scores_weights)
 
         # Scale_losses -> Perhaps lambda for scaling upwards
         cls_loss *= self._cls_scale
         cIoU_loss *= self._bbox_scale
         dfl_loss *= self._dfl_scale
 
-        return cls_loss + cIoU_loss + dfl_loss
+        return cls_loss + cIoU_loss + dfl_loss, cls_loss.detach(), cIoU_loss.detach(), dfl_loss.detach()

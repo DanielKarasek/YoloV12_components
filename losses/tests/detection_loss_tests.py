@@ -10,6 +10,7 @@ from YoloV12.yolo_utils import create_anchor_points_and_stride_tensors
 import pytest
 import torch
 
+
 @pytest.fixture
 def detection_config(request):
     """Config fixture that can switch between 'small' and 'medium' based on a marker or parameter."""
@@ -28,7 +29,7 @@ def detection_config(request):
             "iou_weight": 1,
             "dfl_weight": 2,
             "cls_weight": 3
-        }
+            }
     elif param == "medium":
         return {
             "name": "medium",
@@ -43,7 +44,7 @@ def detection_config(request):
             "iou_weight": 1,
             "dfl_weight": 2,
             "cls_weight": 3
-        }
+            }
 
 
 @pytest.fixture
@@ -87,6 +88,7 @@ def targets(detection_config):
 @pytest.fixture
 def predictions(detection_config, request):
     """Create predictions based on the provided config."""
+    manual_seed = getattr(request, "manual_seed", 32)
     pred_distribution = getattr(request, "pred_distribution", "zeros")
     bin_cnt = detection_config["bin_count"]
     cls_cnt = detection_config["cls_cnt"]
@@ -106,6 +108,7 @@ def predictions(detection_config, request):
             raise ValueError(f"Unknown pred_distribution: {pred_distribution}")
     return predictions
 
+
 @pytest.fixture
 def grid_sizes_and_image_size(detection_config):
     cfg = detection_config
@@ -122,6 +125,7 @@ def anchors_and_strides(grid_sizes_and_image_size, detection_config):
                                                                       0.5)
     return anchors_points, strides
 
+
 @pytest.fixture
 def detection_loss_obj(detection_config):
     """
@@ -137,15 +141,16 @@ def detection_loss_obj(detection_config):
         bbox_scale=cfg["iou_weight"],
         dfl_scale=cfg["dfl_weight"],
         cls_scale=cfg["cls_weight"],
-    )
+        )
+
 
 @pytest.fixture
 def targets_processed():
-    gt_bboxes = torch.tensor([[[0.8000, 3.6000, 2.4000, 10.8000],
-                               [4.0000, 8.4000, 10.4000, 22.8000],
-                               [8.0000, 13.2000, 12.8000, 19.2000]],
+    gt_bboxes = torch.tensor([[[0.0000, 0.0000, 1.6000, 7.2000],
+                               [0.8000, 1.2000, 7.2000, 15.6000],
+                               [5.6000, 10.2000, 10.4000, 16.2000]],
 
-                              [[1.6000, 4.8000, 6.4000, 14.4000],
+                              [[-0.8000, 0.0000, 4.0000, 9.6000],
                                [0.0000, 0.0000, 0.0000, 0.0000],
                                [0.0000, 0.0000, 0.0000, 0.0000]],
 
@@ -175,8 +180,8 @@ def anchor_points_and_strides_raw():
     grid_sizes = torch.tensor([[2, 2], [2, 2], [1, 1]])
     strides = torch.tensor([1, 2, 4])
     offset = 0.5
-    anchor_points = torch.tensor([[0.5000, 0.5000], [0.5000, 1.5000], [1.5000, 0.5000], [1.5000, 1.5000],
-                                  [0.5000, 0.5000], [0.5000, 1.5000], [1.5000, 0.5000], [1.5000, 1.5000],
+    anchor_points = torch.tensor([[0.5000, 0.5000], [1.5000, 0.5000], [0.5000, 1.5000], [1.5000, 1.5000],
+                                  [0.5000, 0.5000], [1.5000, 0.5000], [0.5000, 1.5000], [1.5000, 1.5000],
                                   [0.5000, 0.5000]])
     stride_tensor = torch.tensor([1, 1, 1, 1, 2, 2, 2, 2, 4])
     return grid_sizes, strides, offset, anchor_points, stride_tensor
@@ -200,8 +205,8 @@ def small_slightly_altered_data_with_linearized_predictions(small_slightly_alter
     pred_dist_raw, pred_scores_raw = predictions_linearized.split([cfg["bin_count"] * 4, cfg["cls_cnt"]],
                                                                   dim=-1)
 
-
     return pred_dist_raw, pred_scores_raw, targets, detection_loss_obj
+
 
 @pytest.mark.parametrize("detection_config", ["small", "medium"], indirect=True)
 @pytest.mark.parametrize("predictions", ["zeros"], indirect=True)
@@ -212,6 +217,7 @@ def test_get_grid_sizes_and_image_size(predictions, targets, detection_loss_obj,
     assert img_size.shape == gt_img_size.shape and "There should be w,h for the original image size"
     assert ((grid_sizes == gt_grid_sizes).all())
     assert ((img_size == gt_img_size).all())
+
 
 @pytest.mark.parametrize("detection_config", ["medium"], indirect=True)
 @pytest.mark.parametrize("predictions", ["zeros"], indirect=True)
@@ -224,11 +230,13 @@ def test_target_preprocess(predictions, targets, detection_loss_obj, grid_sizes_
     assert torch.allclose(gt_cls, cls)
     assert torch.allclose(gt_mask, mask)
 
+
 def test_anchor_points_and_strides(anchor_points_and_strides_raw):
     grid_sizes, strides, offset, gt_anchor_points, gt_stride_tensor = anchor_points_and_strides_raw
     anchor_points, stride_tensor = create_anchor_points_and_stride_tensors(grid_sizes, strides, offset)
     assert torch.allclose(anchor_points, gt_anchor_points)
     assert torch.allclose(stride_tensor, gt_stride_tensor)
+
 
 @pytest.mark.parametrize("detection_config", ["small"], indirect=True)
 @pytest.mark.parametrize("predictions", ["zeros"], indirect=True)
@@ -260,10 +268,26 @@ def test_predictions_preprocess(small_slightly_altered_data_with_linearized_pred
     assert pred_scores[0, 0, 0].allclose(torch.tensor([0.7311]), atol=1e-4)
     assert pred_scores[0, 1:, 0].allclose(torch.tensor([0.5]))
 
+def make_anchors(feats, strides, grid_cell_offset=0.5):
+    """Generate anchors from features."""
+    anchor_points, stride_tensor = [], []
+    assert feats is not None
+    dtype, device = feats[0].dtype, feats[0].device
+    for i, stride in enumerate(strides):
+        h, w = feats[i].shape[1:3] if isinstance(feats, list) else (int(feats[i][0]), int(feats[i][1]))
+        sy = torch.arange(end=h, device=device, dtype=dtype) + grid_cell_offset  # shift y
+        sx = torch.arange(end=w, device=device, dtype=dtype) + grid_cell_offset  # shift x
+        from ultralytics.utils.tal import TORCH_1_10
+        sy, sx = torch.meshgrid(sy, sx, indexing="ij") if TORCH_1_10 else torch.meshgrid(sy, sx)
+        anchor_points.append(torch.stack((sx, sy), -1).view(-1, 2))
+        stride_tensor.append(torch.full((h * w, 1), stride, dtype=dtype, device=device))
+    return torch.cat(anchor_points), torch.cat(stride_tensor)
+
 class v8DetectionLoss:
     """Criterion class for computing training losses."""
 
-    def __init__(self, nc, bin_cnt, strides, bbox_gain, dfl_gain, cls_gain, device, tal_topk=10):  # model must be de-paralleled
+    def __init__(self, nc, bin_cnt, strides, bbox_gain, dfl_gain, cls_gain, device,
+                 tal_topk=10):  # model must be de-paralleled
         """Initializes v8DetectionLoss with the model, defining model-related properties and BCE loss function."""
         self.bce = nn.BCEWithLogitsLoss(reduction="none")
         self.hyp = {"box": bbox_gain, "cls": cls_gain, "dfl": dfl_gain}
@@ -315,7 +339,7 @@ class v8DetectionLoss:
         feats = preds[1] if isinstance(preds, tuple) else preds
         pred_distri, pred_scores = torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2).split(
             (self.reg_max * 4, self.nc), 1
-        )
+            )
 
         pred_scores = pred_scores.permute(0, 2, 1).contiguous()
         pred_distri = pred_distri.permute(0, 2, 1).contiguous()
@@ -323,13 +347,12 @@ class v8DetectionLoss:
         dtype = pred_scores.dtype
         batch_size = pred_scores.shape[0]
         imgsz = torch.tensor(feats[0].shape[1:3], device=self.device, dtype=dtype) * self.stride[0]  # image size (h,w)
-        from ultralytics.utils.tal import make_anchors
         anchor_points, stride_tensor = make_anchors(feats, self.stride, 0.5)
 
         # Targets
         targets = torch.cat((batch["batch_idx"].view(-1, 1), batch["cls"].view(-1, 1), batch["bboxes"]), 1)
         targets = self.preprocess(targets.to(self.device), batch_size, scale_tensor=imgsz[[0, 1, 0, 1]])
-        gt_labels, gt_bboxes,  = targets.split((1, 4), 2)  # cls, xyxy
+        gt_labels, gt_bboxes, = targets.split((1, 4), 2)  # cls, xyxy
         mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0.0)
 
         # Pboxes
@@ -345,7 +368,7 @@ class v8DetectionLoss:
             gt_labels,
             gt_bboxes,
             mask_gt,
-        )
+            )
         # Upsacling if target_scores_sum < 1
         target_scores_sum = max(target_scores.sum(), 1)
 
@@ -359,13 +382,18 @@ class v8DetectionLoss:
             target_bboxes /= stride_tensor
             loss[0], loss[2] = self.bbox_loss(
                 pred_distri, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask
-            )
+                )
 
         loss[0] *= self.hyp["box"]  # box gain
         loss[1] *= self.hyp["cls"]  # cls gain
-        loss[2] *= self.hyp["dfl"] # dfl gain
+        loss[2] *= self.hyp["dfl"]  # dfl gain
 
         return loss.sum() * batch_size, loss.detach()  # loss(box, cls, dfl)
+
+@pytest.fixture
+def medium_random_seed_32_detection_loss():
+    total, cls, cIoU, dfl = torch.tensor([9459.2070, 9432.3486, 1.1073517, 25.7510])
+    return total, cls, cIoU, dfl
 
 @pytest.fixture
 def v8_detection_loss(detection_config):
@@ -377,10 +405,12 @@ def v8_detection_loss(detection_config):
                            cls_gain=detection_config["cls_weight"],
                            device="cpu")
 
+
 @pytest.mark.parametrize("detection_config", ["medium"], indirect=True)
 @pytest.mark.parametrize("predictions", ["normal_random"], indirect=True)
-def test_forward_integration(predictions, targets, detection_loss_obj, v8_detection_loss):
-    torch.manual_seed(32)
+def test_forward_integration(predictions, targets, detection_loss_obj, v8_detection_loss, medium_random_seed_32_detection_loss):
+    gt_total, gt_cls, gt_cIoU, gt_dfl = medium_random_seed_32_detection_loss
+
     targets_v8 = deepcopy(targets)
     predictions_v8 = deepcopy(predictions)
     targets_v8["bboxes"] = targets_v8["gt_bboxes"]
@@ -389,8 +419,11 @@ def test_forward_integration(predictions, targets, detection_loss_obj, v8_detect
 
     loss = detection_loss_obj(predictions, targets)
     v8_loss = v8_detection_loss(predictions_v8, targets_v8)
+    assert loss[0].allclose(gt_total)
+    assert loss[1].allclose(gt_cls)
+    assert loss[2].allclose(gt_cIoU)
+    assert loss[3].allclose(gt_dfl)
 
-    assert loss > 0
 
 #
 # def test_forward()

@@ -18,7 +18,7 @@ class DistributionFocalLoss(nn.Module):
         """
         Forward pass of the Distribution Focal Loss
         params:
-            pred: (b,  reg_max)
+            pred_distribution: (b,  reg_max)
             target: (b,  1)
         """
         left_target_bin = target.long()
