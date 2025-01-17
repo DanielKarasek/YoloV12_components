@@ -112,14 +112,14 @@ def boxes_to_corners(bboxes: torch.Tensor,
     Bboxes in format: [Batch_size, 4], where 4 represents [x, y, w, h] (midpoint) or [x1, y1, x2, y2] (corners).
     Out format: 4 tensors of [Batch_size] size
     # doctests
-    >>> bboxes = torch.tensor([[1, 1, 1, 1], [2, 2, 2, 2]])
+    >>> bboxes = torch.tensor([[1., 1., 1., 1.], [2., 2., 2., 2.]])
     >>> boxes_to_corners(bboxes, "cxcywh")
     tensor([[0.5000, 0.5000, 1.5000, 1.5000],
             [1.0000, 1.0000, 3.0000, 3.0000]])
-    >>> bboxes = torch.tensor([[1, 1, 2, 2], [2, 2, 4, 4]])
+    >>> bboxes = torch.tensor([[1., 1., 2., 2.], [2., 2., 4., 4.]])
     >>> boxes_to_corners(bboxes, "xyxy")
-    tensor([[1, 1, 2, 2],
-            [2, 2, 4, 4]])
+    tensor([[1., 1., 2., 2.],
+            [2., 2., 4., 4.]])
     """
     if box_format not in ["cxcywh", "xywh", "xyxy"]:
         raise InvalidBoxFormat("Box format should be midpoint or corners")
@@ -129,5 +129,3 @@ def boxes_to_corners(bboxes: torch.Tensor,
         bboxes = xywh2xyxy(bboxes)
 
     return bboxes
-
-    import doctest

@@ -4,7 +4,7 @@ import torch
 from functorch import einops
 from torch import nn
 
-from YoloV12.modules.general_modules import Conv, DWConv
+from YoloV12.modules.general_modules import BasicConv, DWConv
 
 
 class DetectionHeadV12_0(nn.Module):
@@ -18,8 +18,8 @@ class DetectionHeadV12_0(nn.Module):
         self._distribution_bin_cnt = distribution_bin_cnt
         distrib_ch = max((16, ch[0] // 4, self._distribution_bin_cnt * 4))
         nc_ch = max(ch[0], self._num_classes)
-        dist_branch = (nn.Sequential(Conv(x, distrib_ch, 3, 1),
-                                     Conv(distrib_ch, distrib_ch, 3, 1),
+        dist_branch = (nn.Sequential(BasicConv(x, distrib_ch, 3, 1),
+                                     BasicConv(distrib_ch, distrib_ch, 3, 1),
                                      nn.Conv2d(distrib_ch, 4 * self._distribution_bin_cnt, 1)) for x in ch)
         self.dist_branch = nn.ModuleList(dist_branch)
         cls_branch = (nn.Sequential(DWConv(x, nc_ch, 3, 1),

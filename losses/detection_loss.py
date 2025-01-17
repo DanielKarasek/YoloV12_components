@@ -65,7 +65,7 @@ class DetectionLoss(nn.Module):
     def set_bboxes2xyxy_img_coordinates(bboxes: torch.Tensor, img_size: torch.Tensor) -> torch.Tensor:
         """
         params:
-            bboxes: (b, max_bboxes, 4) # XYWH
+            bboxes: (b, max_bboxes, 4) # CXCYWH
             img_sizes: (b, 2)
         returns:
             bboxes: (b, max_bboxes, 4) # XYXY
